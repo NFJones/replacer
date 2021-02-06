@@ -35,3 +35,16 @@ impl std::fmt::Display for CliError {
         write!(f, "{}", self.msg)
     }
 }
+
+#[macro_export]
+macro_rules! error {
+    ($($arg:tt)*) => (std::io::stderr().write_all(format!($($arg)*)))
+}
+
+#[macro_export]
+macro_rules! errorln {
+    () => (print!("\n"));
+    ($($arg:tt)*) => ({
+        std::io::stderr().write_all(format!("{}\n", format!($($arg)*)).as_bytes()).expect("Failed to write to stderr. Aborting.");
+    })
+}
