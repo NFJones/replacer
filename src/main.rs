@@ -1,31 +1,32 @@
 /*
- *   Copyright (c) 2021 Neil F Jones
- *   All rights reserved.
+*   Copyright (c) 2021 Neil F Jones
+*   All rights reserved.
 
- *   Permission is hereby granted, free of charge, to any person obtaining a copy
- *   of this software and associated documentation files (the "Software"), to deal
- *   in the Software without restriction, including without limitation the rights
- *   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- *   copies of the Software, and to permit persons to whom the Software is
- *   furnished to do so, subject to the following conditions:
- 
- *   The above copyright notice and this permission notice shall be included in all
- *   copies or substantial portions of the Software.
- 
- *   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- *   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- *   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- *   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- *   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- *   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- *   SOFTWARE.
- */
+*   Permission is hereby granted, free of charge, to any person obtaining a copy
+*   of this software and associated documentation files (the "Software"), to deal
+*   in the Software without restriction, including without limitation the rights
+*   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+*   copies of the Software, and to permit persons to whom the Software is
+*   furnished to do so, subject to the following conditions:
 
+*   The above copyright notice and this permission notice shall be included in all
+*   copies or substantial portions of the Software.
+
+*   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+*   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+*   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+*   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+*   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+*   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+*   SOFTWARE.
+*/
+mod cli_error;
 
 use clap::{App, Arg};
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
+use cli_error::{CliError};
 
 fn parse_args() -> clap::ArgMatches {
     return App::new("rp")
@@ -47,7 +48,9 @@ fn parse_args() -> clap::ArgMatches {
                 .short('r')
                 .long("replacement")
                 .takes_value(true)
-                .about("The replacement text to write. Supports groups (${1}, ${named_group}, etc.)"),
+                .about(
+                    "The replacement text to write. Supports groups (${1}, ${named_group}, etc.)",
+                ),
             Arg::new("pattern-file-path")
                 .short('P')
                 .long("pattern-file")
@@ -68,60 +71,42 @@ fn parse_args() -> clap::ArgMatches {
         .get_matches();
 }
 
-fn read_file(path: &str) -> Result<String, String> {
-    fn file_error(path: &str, error: std::io::Error) -> String {
-        return format!("File could not be read: {}, {}", path, error);
-    }
-
+fn read_file(path: &str) -> Result<String, CliError> {
     let mut buf = String::new();
-    match File::open(&path) {
-        Ok(mut file) => match file.read_to_string(&mut buf) {
-            Ok(_) => (),
-            Err(error) => return Err(file_error(path, error)),
-        },
-        Err(error) => return Err(file_error(path, error)),
+    match File::open(&path)?.read_to_string(&mut buf) {
+        Ok(_) => Ok(buf),
+        Err(error) => Err(CliError::from(error)),
     }
-    return Ok(buf);
 }
 
-fn get_arg_or_file(
-    name: &str,
-    pattern: Option<&str>,
-    path: Option<&str>,
-) -> Result<String, String> {
-    match pattern {
-        Some(p) => return Ok(String::from(p)),
+fn get_arg_or_file(name: &str, arg: Option<&str>, path: Option<&str>) -> Result<String, CliError> {
+    match arg {
+        Some(arg) => Ok(String::from(arg)),
         None => match path {
-            Some(path) => return read_file(path),
-            None => return Err(format!("No {} was supplied", name)),
+            Some(path) => read_file(path),
+            None => Err(CliError::from(format!("No {} was supplied", name))),
         },
     }
 }
 
-fn write_file(path: &str, content: String) -> Result<(), String> {
+fn write_file(path: &str, content: String) -> Result<(), CliError> {
     match std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
-        .open(&path)
+        .open(&path)?
+        .write_all(content.as_bytes())
     {
-        Ok(ref mut file) => match file.write_all(content.as_bytes()) {
-            Ok(_) => return Ok(()),
-            Err(error) => return Err(format!("Failed to write to file: {}, {}", path, error)),
-        },
-        Err(error) => return Err(format!("Failed to open file: {}, {}", path, error)),
+        Ok(_) => Ok(()),
+        Err(error) => Err(CliError::from(error)),
     }
 }
 
-fn process_text(pattern: String, replacement: String, text: String) -> Result<String, String> {
-    let re = regex::Regex::new(pattern.clone().as_str());
-    match re {
-        Ok(re) => {
-            return Ok(String::from(
-                re.replace_all(text.as_str(), replacement.as_str()),
-            ));
-        }
-        Err(error) => return Err(format!("Failed to parse regex: {}", error)),
-    }
+fn process_text(pattern: String, replacement: String, text: String) -> Result<String, CliError> {
+    return Ok(String::from(
+        regex::Regex::new(pattern.clone().as_str())?
+            .replace_all(text.as_str(), replacement.as_str())
+            .as_ref(),
+    ));
 }
 
 fn process_pattern(
@@ -129,7 +114,7 @@ fn process_pattern(
     replacement: String,
     files: Option<clap::Values>,
     inplace: bool,
-) -> Result<String, String> {
+) -> Result<(), CliError> {
     match files {
         Some(files) => {
             for path in files {
@@ -139,10 +124,7 @@ fn process_pattern(
                         let result = process_text(pattern.clone(), replacement.clone(), text);
                         match result {
                             Ok(result) => match inplace {
-                                true => match write_file(path, result) {
-                                    Ok(_) => (),
-                                    Err(error) => return Err(error),
-                                },
+                                true => return write_file(path, result),
                                 false => print!("{}", result),
                             },
                             Err(error) => return Err(error),
@@ -162,11 +144,11 @@ fn process_pattern(
                         Err(error) => return Err(error),
                     }
                 }
-                Err(error) => return Err(format!("Failed to read stdin: {}", error)),
+                Err(error) => return Err(CliError::from(error)),
             }
         }
     }
-    return Ok(String::new());
+    return Ok(());
 }
 
 fn escape_pattern(pattern: String) {
@@ -192,11 +174,11 @@ fn main() {
     let files: Option<clap::Values> = args.values_of("files");
 
     match pattern {
-        Ok(p) => match escape {
-            true => escape_pattern(p),
+        Ok(pattern) => match escape {
+            true => escape_pattern(pattern),
             false => match replacement {
-                Ok(r) => {
-                    let result = process_pattern(p, r, files, inplace);
+                Ok(replacement) => {
+                    let result = process_pattern(pattern, replacement, files, inplace);
                     match result {
                         Ok(_) => (),
                         Err(error) => {
