@@ -10,6 +10,7 @@ pub fn get_debug() -> bool {
     return DEBUG.load(Ordering::SeqCst);
 }
 
+#[derive(Debug, Clone)]
 pub struct CliError {
     msg: String,
 }
@@ -61,7 +62,7 @@ macro_rules! errorln {
 
 #[macro_export]
 macro_rules! debug {
-    ($($arg:tt)*) => (if error::get_debug() { error!($($arg)*);})
+    ($($arg:tt)*) => (if replacer::error::get_debug() { error!($($arg)*);})
 }
 
 #[macro_export]
