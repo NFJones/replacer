@@ -20,10 +20,10 @@
 *   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 *   SOFTWARE.
 */
-mod cli_error;
+mod error;
 
 use clap::{App, Arg};
-use cli_error::CliError;
+use error::{set_debug, CliError};
 use regex::Regex;
 use std::collections::HashMap;
 use std::fs::File;
@@ -75,6 +75,11 @@ fn parse_args() -> clap::ArgMatches {
                 .takes_value(true)
                 .default_value("1MiB")
                 .about("The internal buffer size when making streaming replacements."),
+            Arg::new("verbose")
+                .short('v')
+                .long("verbose")
+                .takes_value(false)
+                .about("Print verbose output to stderr."),
             Arg::new("files").multiple(true),
         ])
         .get_matches();
@@ -119,6 +124,7 @@ fn process_text(pattern: String, replacement: String, text: String) -> Result<St
 }
 
 fn process_stdin(pattern: String, replacement: String, pump_limit: i64) -> Result<(), CliError> {
+    debugln!("Reading stdin");
     let mut text = String::new();
     let _pump_limit = pump_limit;
     match std::io::stdin().read_to_string(&mut text) {
@@ -141,20 +147,32 @@ fn process_files(
     inplace: bool,
 ) -> Result<(), CliError> {
     for path in files {
-        let text = read_file(path);
-        match text {
-            Ok(text) => {
+        debug!("Processing: {} => ", path);
+        read_file(path)
+            .and_then(|text| -> Result<(), CliError> {
                 let result = process_text(pattern.clone(), replacement.clone(), text);
                 match result {
-                    Ok(result) => match inplace {
-                        true => return write_file(path, result),
-                        false => print!("{}", result),
-                    },
-                    Err(error) => return Err(error),
+                    Ok(result) => {
+                        debugln!("replaced");
+                        match inplace {
+                            true => return write_file(path, result),
+                            false => {
+                                print!("{}", result);
+                                return Ok(());
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        debugln!("skipped");
+                        return Err(error);
+                    }
                 }
-            }
-            Err(error) => return Err(error),
-        }
+            })
+            .or_else(|error| -> Result<(), CliError> {
+                debugln!("failed: ({})", error);
+                return Err(error);
+            })
+            .ok();
     }
     return Ok(());
 }
@@ -178,7 +196,7 @@ fn escape_pattern(pattern: String) {
 }
 
 fn parse_size(size_str: &str) -> Result<i64, CliError> {
-    let default_value = 1;
+    let default_size = 1;
     let mut magnitude_map = HashMap::new();
     magnitude_map.insert("", 1024 ^ 0);
     magnitude_map.insert("KiB", 1024 ^ 1);
@@ -194,27 +212,32 @@ fn parse_size(size_str: &str) -> Result<i64, CliError> {
             if captures.len() > 3 {
                 magnitude_str = captures.index(2);
             }
-            let magnitude = magnitude_map.get(magnitude_str).unwrap_or(&default_value);
-            return Ok(size.parse::<i64>().unwrap_or(default_value) * magnitude);
+            let magnitude = magnitude_map.get(magnitude_str).unwrap_or(&default_size);
+            return Ok(size.parse::<i64>().unwrap_or(default_size) * magnitude);
         }
         None => {
-            std::io::stderr()
-                .write_all(
-                    format!(
-                        "Warning: Invalid size string ({}), defaulting to 1MiB\n",
-                        size_str
-                    )
-                    .as_bytes(),
-                )
-                .expect("Could not write to stderr. Aborting.");
-            return Err(CliError::from(format!("Invalid size string: {}", size_str)));
+            let error_str = format!(
+                "Warning: Invalid size string ({}), defaulting to 1MiB",
+                size_str
+            );
+            errorln!("{}", error_str);
+            return Err(CliError::from(error_str));
         }
     }
 }
 
+fn parse_pump_limit(pump_limit_arg: Option<&str>) -> i64 {
+    return pump_limit_arg
+        .and_then(|pump_limit| -> Option<i64> {
+            return Some(parse_size(pump_limit).unwrap_or(1024 ^ 2));
+        })
+        .unwrap_or(1024 ^ 2);
+}
+
 fn main() {
-    let mut error_occurred = false;
     let args = parse_args();
+    set_debug(args.is_present("verbose"));
+
     let escape = args.is_present("escape");
     let inplace = args.is_present("inplace");
     let pattern = get_arg_or_file(
@@ -228,40 +251,22 @@ fn main() {
         args.value_of("replacement-file-path"),
     );
     let files: Option<clap::Values> = args.values_of("files");
-    let pump_limit: i64;
-    let pump_limit_str = args.value_of("pump-limit");
-    match pump_limit_str {
-        Some(pump_limit_str) => pump_limit = parse_size(pump_limit_str).unwrap_or(1024 * 1024),
-        None => pump_limit = 1024 * 1024,
-    }
+    let pump_limit = parse_pump_limit(args.value_of("pump-limit"));
 
-    match pattern {
-        Ok(pattern) => match escape {
-            true => escape_pattern(pattern),
-            false => match replacement {
-                Ok(replacement) => {
-                    let result = process_pattern(pattern, replacement, files, inplace, pump_limit);
-                    match result {
-                        Ok(_) => (),
-                        Err(error) => {
-                            errorln!("{}", error);
-                            error_occurred = true;
-                        }
-                    }
+    pattern
+        .and_then(|pattern| -> Result<(), CliError> {
+            match escape {
+                true => return Ok(escape_pattern(pattern.clone())),
+                false => {
+                    return replacement.and_then(|replacement| -> Result<(), CliError> {
+                        return process_pattern(pattern, replacement, files, inplace, pump_limit);
+                    })
                 }
-                Err(error) => {
-                    errorln!("{}", error);
-                    error_occurred = true;
-                }
-            },
-        },
-        Err(error) => {
-            errorln!("{}", error);
-            error_occurred = true;
-        }
-    }
-
-    if error_occurred {
-        std::process::exit(1);
-    }
+            }
+        })
+        .or_else(|error| -> Result<(), ()> {
+            errorln!("\n{}", error);
+            std::process::exit(1);
+        })
+        .ok();
 }

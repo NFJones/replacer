@@ -1,3 +1,15 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static DEBUG: AtomicBool = AtomicBool::new(false);
+
+pub fn set_debug(debug: bool) {
+    DEBUG.store(debug, Ordering::SeqCst);
+}
+
+pub fn get_debug() -> bool {
+    return DEBUG.load(Ordering::SeqCst);
+}
+
 pub struct CliError {
     msg: String,
 }
@@ -38,13 +50,22 @@ impl std::fmt::Display for CliError {
 
 #[macro_export]
 macro_rules! error {
-    ($($arg:tt)*) => (std::io::stderr().write_all(format!($($arg)*)))
+    ($($arg:tt)*) => (std::io::stderr().write_all(format!($($arg)*).as_bytes()).ok())
 }
 
 #[macro_export]
 macro_rules! errorln {
-    () => (print!("\n"));
-    ($($arg:tt)*) => ({
-        std::io::stderr().write_all(format!("{}\n", format!($($arg)*)).as_bytes()).expect("Failed to write to stderr. Aborting.");
-    })
+    () => (error!("\n"));
+    ($($arg:tt)*) => (error!("{}\n", format!($($arg)*)));
+}
+
+#[macro_export]
+macro_rules! debug {
+    ($($arg:tt)*) => (if error::get_debug() { std::io::stderr().write_all(format!($($arg)*).as_bytes()).ok();})
+}
+
+#[macro_export]
+macro_rules! debugln {
+    () => (debug!("\n"));
+    ($($arg:tt)*) => (debug!("{}\n", format!($($arg)*)));
 }
