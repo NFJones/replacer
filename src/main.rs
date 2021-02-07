@@ -25,9 +25,10 @@ mod replacer;
 use clap::{App, Arg};
 use regex::Regex;
 use replacer::error::{set_debug, CliError};
+use replacer::scan_buffer::ScanBuffer;
 use replacer::util::{parse_size, read_file, write_file};
-use std::io::Read;
 use std::io::Write;
+use std::iter::FromIterator;
 
 #[derive(Debug, Clone)]
 struct Cli {
@@ -215,16 +216,22 @@ impl Cli {
 
     fn process_stdin(&self, pattern: &str, replacement: &str) -> Result<(), CliError> {
         debugln!("Reading stdin");
-        let mut text = String::new();
-        match std::io::stdin().read_to_string(&mut text) {
-            Ok(_) => {
-                let result = self.process_text(pattern, replacement, text);
-                match result {
-                    Ok(result) => print!("{}", result),
-                    Err(error) => return Err(error),
-                }
+        let mut handle = std::io::stdin();
+        let mut buffer = ScanBuffer::new(
+            self.pump_limit as usize,
+            (self.pump_limit / 2) as usize,
+            '\0',
+        );
+
+        while buffer.shift(&mut handle) > 0 {
+            let text = buffer.process(|b: &Vec<char>| {
+                return String::from_iter(b.iter());
+            });
+            let result = self.process_text(pattern, replacement, text);
+            match result {
+                Ok(result) => print!("{}", result),
+                Err(_) => (),
             }
-            Err(error) => return Err(CliError::from(error)),
         }
         return Ok(());
     }
