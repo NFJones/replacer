@@ -61,7 +61,7 @@ macro_rules! errorln {
 
 #[macro_export]
 macro_rules! debug {
-    ($($arg:tt)*) => (if error::get_debug() { std::io::stderr().write_all(format!($($arg)*).as_bytes()).ok();})
+    ($($arg:tt)*) => (if error::get_debug() { error!($($arg)*);})
 }
 
 #[macro_export]

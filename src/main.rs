@@ -265,7 +265,7 @@ fn main() {
             }
         })
         .or_else(|error| -> Result<(), ()> {
-            errorln!("\n{}", error);
+            errorln!("{}", error);
             std::process::exit(1);
         })
         .ok();
