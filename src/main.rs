@@ -25,11 +25,9 @@ mod replacer;
 use clap::{App, Arg};
 use regex::Regex;
 use replacer::error::{set_debug, CliError};
-use replacer::util::{read_file, write_file};
-use std::collections::HashMap;
+use replacer::util::{parse_size, read_file, write_file};
 use std::io::Read;
 use std::io::Write;
-use std::ops::Index;
 
 #[derive(Debug, Clone)]
 struct Cli {
@@ -146,17 +144,12 @@ impl Cli {
         }
     }
 
-    fn process_text(
-        &self,
-        pattern: String,
-        replacement: String,
-        text: String,
-    ) -> Result<String, CliError> {
-        return Ok(String::from(
-            Regex::new(pattern.clone().as_str())?
-                .replace_all(text.as_str(), replacement.as_str())
-                .as_ref(),
-        ));
+    fn parse_pump_limit(pump_limit_arg: Option<&str>) -> i64 {
+        return pump_limit_arg
+            .and_then(|pump_limit| -> Option<i64> {
+                return Some(parse_size(pump_limit).unwrap_or(1024 ^ 2));
+            })
+            .unwrap_or(1024 ^ 2);
     }
 
     fn escape_pattern(&self, pattern: String) {
@@ -164,83 +157,63 @@ impl Cli {
         print!("{}", escaped);
     }
 
-    fn parse_size(size_str: &str) -> Result<i64, CliError> {
-        let default_size = 1;
-        let mut magnitude_map = HashMap::new();
-        magnitude_map.insert("", 1024 ^ 0);
-        magnitude_map.insert("KiB", 1024 ^ 1);
-        magnitude_map.insert("MiB", 1024 ^ 2);
-        magnitude_map.insert("GiB", 1024 ^ 3);
-        magnitude_map.insert("TiB", 1024 ^ 4);
-        magnitude_map.insert("PiB", 1024 ^ 5);
-        let captures = Regex::new(r"^(\d+)([KMGTP]iB)?$")?.captures(size_str);
-        match captures {
-            Some(captures) => {
-                let mut magnitude_str = "";
-                let size = captures.index(1);
-                if captures.len() > 3 {
-                    magnitude_str = captures.index(2);
-                }
-                let magnitude = magnitude_map.get(magnitude_str).unwrap_or(&default_size);
-                return Ok(size.parse::<i64>().unwrap_or(default_size) * magnitude);
-            }
-            None => {
-                let error_str = format!(
-                    "Warning: Invalid size string ({}), defaulting to 1MiB",
-                    size_str
-                );
-                errorln!("{}", error_str);
-                return Err(CliError::from(error_str));
-            }
-        }
+    fn process_text(
+        &self,
+        pattern: &str,
+        replacement: &str,
+        text: String,
+    ) -> Result<String, CliError> {
+        return Ok(String::from(
+            Regex::new(pattern)?
+                .replace_all(text.as_str(), replacement)
+                .as_ref(),
+        ));
     }
 
-    fn parse_pump_limit(pump_limit_arg: Option<&str>) -> i64 {
-        return pump_limit_arg
-            .and_then(|pump_limit| -> Option<i64> {
-                return Some(Cli::parse_size(pump_limit).unwrap_or(1024 ^ 2));
+    fn process_file(&self, pattern: &str, replacement: &str, path: &str) -> Result<(), CliError> {
+        debug!("Processing: {} => ", path);
+        return read_file(path)
+            .and_then(|text| -> Result<(), CliError> {
+                let result = self.process_text(pattern, replacement, text);
+                match result {
+                    Ok(result) => {
+                        debugln!("replaced");
+                        match self.inplace {
+                            true => return write_file(path, result),
+                            false => {
+                                print!("{}", result);
+                                return Ok(());
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        debugln!("skipped");
+                        return Err(error);
+                    }
+                }
             })
-            .unwrap_or(1024 ^ 2);
+            .or_else(|error| -> Result<(), CliError> {
+                debugln!("failed: ({})", error);
+                return Err(error);
+            });
     }
 
     fn process_files(
         &self,
-        pattern: String,
-        replacement: String,
+        pattern: &str,
+        replacement: &str,
         files: Vec<String>,
     ) -> Result<(), CliError> {
         for path in files {
-            debug!("Processing: {} => ", path);
-            read_file(path.as_str())
-                .and_then(|text| -> Result<(), CliError> {
-                    let result = self.process_text(pattern.clone(), replacement.clone(), text);
-                    match result {
-                        Ok(result) => {
-                            debugln!("replaced");
-                            match self.inplace {
-                                true => return write_file(path.as_str(), result),
-                                false => {
-                                    print!("{}", result);
-                                    return Ok(());
-                                }
-                            }
-                        }
-                        Err(error) => {
-                            debugln!("skipped");
-                            return Err(error);
-                        }
-                    }
-                })
-                .or_else(|error| -> Result<(), CliError> {
-                    debugln!("failed: ({})", error);
-                    return Err(error);
-                })
-                .ok();
+            match self.process_file(pattern, replacement, path.as_str()) {
+                Ok(_) => (),
+                Err(error) => return Err(error),
+            }
         }
         return Ok(());
     }
 
-    fn process_stdin(&self, pattern: String, replacement: String) -> Result<(), CliError> {
+    fn process_stdin(&self, pattern: &str, replacement: &str) -> Result<(), CliError> {
         debugln!("Reading stdin");
         let mut text = String::new();
         match std::io::stdin().read_to_string(&mut text) {
@@ -256,7 +229,7 @@ impl Cli {
         return Ok(());
     }
 
-    fn process_pattern(&self, pattern: String, replacement: String) -> Result<(), CliError> {
+    fn process_pattern(&self, pattern: &str, replacement: &str) -> Result<(), CliError> {
         match self.files.clone() {
             Some(files) => return self.process_files(pattern, replacement, files),
             None => return self.process_stdin(pattern, replacement),
@@ -269,7 +242,9 @@ impl Cli {
             Ok(pattern) => match self.escape {
                 true => return Ok(self.escape_pattern(pattern)),
                 false => match self.replacement.clone() {
-                    Ok(replacement) => return self.process_pattern(pattern, replacement),
+                    Ok(replacement) => {
+                        return self.process_pattern(pattern.as_str(), replacement.as_str())
+                    }
                     Err(error) => return Err(error),
                 },
             },

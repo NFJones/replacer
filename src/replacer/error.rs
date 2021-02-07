@@ -56,17 +56,17 @@ macro_rules! error {
 
 #[macro_export]
 macro_rules! errorln {
-    () => (error!("\n"));
-    ($($arg:tt)*) => (error!("{}\n", format!($($arg)*)));
+    () => (crate::error!("\n"));
+    ($($arg:tt)*) => (crate::error!("{}\n", format!($($arg)*)));
 }
 
 #[macro_export]
 macro_rules! debug {
-    ($($arg:tt)*) => (if replacer::error::get_debug() { error!($($arg)*);})
+    ($($arg:tt)*) => (if replacer::error::get_debug() { crate::error!($($arg)*);})
 }
 
 #[macro_export]
 macro_rules! debugln {
-    () => (debug!("\n"));
-    ($($arg:tt)*) => (debug!("{}\n", format!($($arg)*)));
+    () => (crate::debug!("\n"));
+    ($($arg:tt)*) => (crate::debug!("{}\n", format!($($arg)*)));
 }
