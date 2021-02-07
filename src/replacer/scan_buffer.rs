@@ -1,4 +1,6 @@
+use crate::errorln;
 use std::io::Read;
+use std::io::Write;
 
 #[derive(Debug, Clone)]
 pub struct ScanBuffer<T> {
@@ -46,6 +48,7 @@ where
                 return Ok(());
             })
             .or_else(|error| {
+                errorln!("{}", error);
                 return Err(error);
             })
             .ok();

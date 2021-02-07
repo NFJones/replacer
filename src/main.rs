@@ -27,6 +27,8 @@ use regex::Regex;
 use replacer::error::{set_debug, CliError};
 use replacer::scan_buffer::ScanBuffer;
 use replacer::util::{parse_size, read_file, write_file};
+use std::fs::File;
+use std::io::Read;
 use std::io::Write;
 use std::iter::FromIterator;
 
@@ -39,6 +41,28 @@ struct Cli {
     pump_limit: i64,
     verbose: bool,
     files: Option<Vec<String>>,
+}
+
+fn regex_validator(val: &str) -> Result<String, CliError> {
+    match Regex::new(val) {
+        Ok(_) => return Ok(String::from(val)),
+        Err(error) => return Err(CliError::from(error)),
+    }
+}
+
+fn regex_file_validator(val: &str) -> Result<String, CliError> {
+    let mut buffer = String::new();
+    let file = File::open(val);
+    match file {
+        Ok(mut file) => match file.read_to_string(&mut buffer) {
+            Ok(_) => match regex_validator(buffer.as_str()) {
+                Ok(_) => return Ok(String::from(val)),
+                Err(error) => return Err(CliError::from(error)),
+            },
+            Err(error) => return Err(CliError::from(error)),
+        },
+        Err(error) => return Err(CliError::from(error)),
+    }
 }
 
 impl Cli {
@@ -57,6 +81,7 @@ impl Cli {
                     .short('p')
                     .long("pattern")
                     .takes_value(true)
+                    .validator(regex_validator)
                     .about("The regex pattern to match."),
                 Arg::new("replacement")
                     .short('r')
@@ -69,6 +94,7 @@ impl Cli {
                     .short('P')
                     .long("pattern-file")
                     .takes_value(true)
+                    .validator(regex_file_validator)
                     .about("The file to read the regex pattern from."),
                 Arg::new("replacement-file-path")
                     .short('R')
@@ -173,30 +199,25 @@ impl Cli {
 
     fn process_file(&self, pattern: &str, replacement: &str, path: &str) -> Result<(), CliError> {
         debug!("Processing: {} => ", path);
-        return read_file(path)
-            .and_then(|text| -> Result<(), CliError> {
-                let result = self.process_text(pattern, replacement, text);
-                match result {
-                    Ok(result) => {
-                        debugln!("replaced");
-                        match self.inplace {
-                            true => return write_file(path, result),
-                            false => {
-                                print!("{}", result);
-                                return Ok(());
-                            }
+        return read_file(path).and_then(|text| -> Result<(), CliError> {
+            let result = self.process_text(pattern, replacement, text);
+            match result {
+                Ok(result) => {
+                    debugln!("replaced");
+                    match self.inplace {
+                        true => return write_file(path, result),
+                        false => {
+                            print!("{}", result);
+                            return Ok(());
                         }
                     }
-                    Err(error) => {
-                        debugln!("skipped");
-                        return Err(error);
-                    }
                 }
-            })
-            .or_else(|error| -> Result<(), CliError> {
-                debugln!("failed: ({})", error);
-                return Err(error);
-            });
+                Err(error) => {
+                    debugln!("skipped");
+                    return Err(error);
+                }
+            }
+        });
     }
 
     fn process_files(
@@ -208,7 +229,7 @@ impl Cli {
         for path in files {
             match self.process_file(pattern, replacement, path.as_str()) {
                 Ok(_) => (),
-                Err(error) => return Err(error),
+                Err(error) => errorln!("{}", error),
             }
         }
         return Ok(());

@@ -51,7 +51,7 @@ impl std::fmt::Display for CliError {
 
 #[macro_export]
 macro_rules! error {
-    ($($arg:tt)*) => (std::io::stderr().write_all(format!($($arg)*).as_bytes()).ok())
+    ($($arg:tt)*) => ({std::io::stderr().write_all(format!($($arg)*).as_bytes()).ok();})
 }
 
 #[macro_export]
