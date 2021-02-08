@@ -23,14 +23,15 @@
 mod replacer;
 
 use replacer::cli::Cli;
+use replacer::error::CliError;
 use std::io::Write;
 
-fn main() {
+fn main() -> Result<(), CliError> {
     match Cli::new().run() {
-        Ok(_) => (),
+        Ok(_) => return Ok(()),
         Err(error) => {
             errorln!("{}", error);
-            std::process::exit(1);
+            return Err(CliError::from(error));
         }
     }
 }
