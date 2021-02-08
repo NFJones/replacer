@@ -1,7 +1,7 @@
 [package]
 name = "rp"
 version = "0.1.0"
-authors = ["Neil Jones"]
+authors = ["Neil F Jones"]
 edition = "2018"
 
 [dependencies]
