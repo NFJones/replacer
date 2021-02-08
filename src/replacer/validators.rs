@@ -20,8 +20,37 @@
 *   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 *   SOFTWARE.
 */
-pub mod cli;
-pub mod error;
-pub mod scan_buffer;
-pub mod util;
-pub mod validators;
+use super::error::*;
+use super::util::*;
+use regex::Regex;
+use std::fs::File;
+use std::io::Read;
+
+pub fn validate_regex(val: &str) -> Result<String, CliError> {
+    match Regex::new(val) {
+        Ok(_) => return Ok(String::from(val)),
+        Err(error) => return Err(CliError::from(error)),
+    }
+}
+
+pub fn validate_regex_file(val: &str) -> Result<String, CliError> {
+    let mut buffer = String::new();
+    let file = File::open(val);
+    match file {
+        Ok(mut file) => match file.read_to_string(&mut buffer) {
+            Ok(_) => match validate_regex(buffer.as_str()) {
+                Ok(_) => return Ok(String::from(val)),
+                Err(error) => return Err(CliError::from(error)),
+            },
+            Err(error) => return Err(CliError::from(error)),
+        },
+        Err(error) => return Err(CliError::from(error)),
+    }
+}
+
+pub fn validate_size(size: &str) -> Result<i64, CliError> {
+    match parse_size(size) {
+        Ok(size) => return Ok(size),
+        Err(error) => return Err(error),
+    }
+}

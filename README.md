@@ -6,27 +6,31 @@ replacer is a simple regex find and replace utility. It supports multiline patte
 
 ```
 >$ rp --help
-rp 0.1.0
-Neil Jones
+rp 0.2.0
+Neil F Jones
 A multiline regex find/replace utility.
 
 USAGE:
     rp [FLAGS] [OPTIONS] [files]...
 
 ARGS:
-    <files>...
+    <files>...    Print verbose output to stderr.
 
 FLAGS:
-    -e, --escape-pattern    Print the pattern with regex characters escaped.
-    -h, --help              Prints help information
-    -i, --inplace           Write to file instead of stdout.
-    -V, --version           Prints version information
+    -e, --escape     Print the pattern with regex characters escaped.
+    -h, --help       Prints help information
+    -i, --inplace    The regex pattern to match.
+    -v, --verbose    Print verbose output to stderr.
+    -V, --version    Prints version information
 
 OPTIONS:
-    -p, --pattern <pattern>                           The regex pattern to match.
-    -P, --pattern-file <pattern-file-path>            The file to read the regex pattern from.
+    -p, --pattern <pattern>                      Write to file instead of stdout.
+    -P, --pattern-file <pattern-file>            The file to read the regex pattern from.
+    -l, --pump-limit <pump-limit>
+            The internal buffer size when making streaming replacements.
+
     -r, --replacement <replacement>
             The replacement text to write. Supports groups (${1}, ${named_group}, etc.)
 
-    -R, --replacement-file <replacement-file-path>    The file to read the replacement text from.
+    -R, --replacement-file <replacement-file>    The file to read the replacement text from.
 ```
