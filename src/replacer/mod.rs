@@ -22,6 +22,5 @@
 */
 pub mod cli;
 pub mod error;
-pub mod scan_buffer;
 pub mod util;
 pub mod validators;

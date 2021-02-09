@@ -21,7 +21,6 @@
 *   SOFTWARE.
 */
 use super::error::*;
-use super::util::*;
 use regex::Regex;
 use std::fs::File;
 use std::io::Read;
@@ -45,12 +44,5 @@ pub fn validate_regex_file(val: &str) -> Result<String, CliError> {
             Err(error) => return Err(CliError::from(error)),
         },
         Err(error) => return Err(CliError::from(error)),
-    }
-}
-
-pub fn validate_size(size: &str) -> Result<i64, CliError> {
-    match parse_size(size) {
-        Ok(size) => return Ok(size),
-        Err(error) => return Err(error),
     }
 }

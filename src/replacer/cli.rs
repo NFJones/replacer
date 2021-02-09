@@ -21,14 +21,13 @@
 *   SOFTWARE.
 */
 use super::error::*;
-use super::scan_buffer::ScanBuffer;
 use super::util::*;
 use super::validators::*;
 use crate::{debug, debugln, errorln};
 use clap::Clap;
 use regex::Regex;
+use std::io::Read;
 use std::io::Write;
-use std::iter::FromIterator;
 
 #[clap(
     name = "rp",
@@ -58,7 +57,6 @@ struct Opts {
         short('r'),
         long("replacement"),
         takes_value(true),
-        validator(validate_regex),
         conflicts_with("replacement-file"),
         about("The replacement text to write. Supports groups (${1}, ${named_group}, etc.)")
     )]
@@ -76,7 +74,6 @@ struct Opts {
         short('R'),
         long("replacement-file"),
         takes_value(true),
-        validator(validate_regex_file),
         conflicts_with("replacement"),
         about("The file to read the replacement text from.")
     )]
@@ -88,14 +85,6 @@ struct Opts {
         about("Print the pattern with regex characters escaped.")
     )]
     escape: bool,
-    #[clap(
-        short('l'),
-        long("pump-limit"),
-        takes_value(true),
-        validator(validate_size),
-        about("The internal buffer size when making streaming replacements.")
-    )]
-    pump_limit: Option<i64>,
     #[clap(
         short('v'),
         long("verbose"),
@@ -111,7 +100,6 @@ struct Opts {
 struct ParsedOpts {
     pattern: String,
     replacement: String,
-    pump_limit: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -129,7 +117,6 @@ impl Cli {
                 opts.replacement.clone(),
                 opts.replacement_file.clone(),
             ),
-            pump_limit: opts.pump_limit.unwrap_or(1024 ^ 2),
         };
         return Cli { opts, parsed_opts };
     }
@@ -192,22 +179,17 @@ impl Cli {
 
     fn process_stdin(&self) -> Result<(), CliError> {
         debugln!("Reading stdin");
-        let mut handle = std::io::stdin();
-        let mut buffer = ScanBuffer::new(
-            self.parsed_opts.pump_limit as usize,
-            (self.parsed_opts.pump_limit / 2) as usize,
-            '\0',
-        );
+        let mut text = String::new();
 
-        while buffer.shift(&mut handle) > 0 {
-            let text = buffer.process(|b: &Vec<char>| {
-                return String::from_iter(b.iter());
-            });
-            let result = self.process_text(text);
-            match result {
-                Ok(result) => print!("{}", result),
-                Err(_) => (),
+        match std::io::stdin().read_to_string(&mut text) {
+            Ok(_) => {
+                let result = self.process_text(text.clone());
+                match result {
+                    Ok(result) => print!("{}", result),
+                    Err(_) => (),
+                }
             }
+            Err(error) => return Err(CliError::from(error)),
         }
         return Ok(());
     }

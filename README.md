@@ -26,9 +26,6 @@ FLAGS:
 OPTIONS:
     -p, --pattern <pattern>                      Write to file instead of stdout.
     -P, --pattern-file <pattern-file>            The file to read the regex pattern from.
-    -l, --pump-limit <pump-limit>
-            The internal buffer size when making streaming replacements.
-
     -r, --replacement <replacement>
             The replacement text to write. Supports groups (${1}, ${named_group}, etc.)
 
